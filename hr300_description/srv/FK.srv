@@ -1,0 +1,14 @@
+# Request: five float64 arguments
+float64 a
+float64 b
+float64 c
+float64 d
+float64 e
+---
+# Response: three float64 values
+# z_sum  - сумма всех аргументов
+# y_diff - разность (a - b - c - d - e)
+# z_prod - произведение всех аргументов
+float64 z_sum
+float64 y_diff
+float64 z_prod

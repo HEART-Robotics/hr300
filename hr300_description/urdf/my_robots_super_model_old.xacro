@@ -1,0 +1,387 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="rectangle_robot">
+
+  <!-- Параметры -->
+  <xacro:property name="width" value="0.14993"/>
+  <xacro:property name="height" value="0.03992"/>
+  <xacro:property name="link_radius" value="0.005"/>
+  <xacro:property name="height_2" value="0.19001"/>
+  <xacro:property name="box_size" value="0.4"/>
+  <xacro:property name="width_top" value="1.5"/>
+  <xacro:property name="triangle" value="0.04"/>
+    <xacro:property name="triangle2" value="0.02828"/>
+    
+  <!-- Материалы -->
+  <material name="red"><color rgba="1 0 0 1"/></material>
+  <material name="blue"><color rgba="0 0 1 1"/></material>
+  <material name="green"><color rgba="0 1 0 1"/></material>
+  <material name="ghost"><color rgba="0.5 0.5 0.5 0.3"/></material>
+  <material name="white"><color rgba="0.8 0.8 0.8 1.0"/></material>
+  <material name="whites"><color rgba="0.9 0.9 0.9 1.0"/></material>
+  <!-- Базовое звено (только parent!) -->
+  <link name="base_link">
+    <collision>
+      <geometry><box size="0.202 0.191 0.0668"/></geometry>
+    </collision>
+    <visual>
+      <geometry><mesh filename="package://hr300_description/meshes/stl/base.STL" scale="0.001 0.001 0.001"/></geometry>
+      <origin xyz="0.1145 0.0182 -0.3234" rpy="0 0 3.14"/>
+      <material name="white"/>
+    </visual>
+  </link>
+
+  <link name="rev_base_link">
+    <collision>
+      <geometry><box size="0.124 0.124 0.10476"/></geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </collision>
+    <visual>
+      <geometry><mesh filename="package://hr300_description/meshes/stl/link1.STL" scale="0.001 0.001 0.001"/></geometry>
+      <origin xyz="0.114097 -0.015 -0.41038" rpy="0 0 3.14"/>
+      <material name="red"/>
+    </visual>
+  </link>
+
+  <joint name="rev_base_joint" type="revolute">
+    <parent link="base_link"/>
+    <child link="rev_base_link"/>
+    <origin xyz="0 0.0335 0.08578" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="1"/>
+  </joint>
+  
+  <!-- Основная цепь (3 реальных звена) -->
+  <link name="link1">
+    <collision>
+      <geometry><cylinder length="${height}" radius="${link_radius}"/></geometry>
+      <origin xyz="0 0 ${height/2}" rpy="0 0 0"/>
+    </collision>
+    <visual>
+      <geometry><mesh filename="package://hr300_description/meshes/stl/arm1.STL" scale="0.001 0.001 0.001"/></geometry>
+      <origin xyz="-0.1056 0.0113 -0.48" rpy="0 0 0"/>
+      <material name="red"/>
+    </visual>
+  </link>
+
+  <link name="link2">
+    <collision>
+      <geometry><cylinder length="${width}" radius="${link_radius}"/></geometry>
+      <origin xyz="0 ${width/2} 0" rpy="1.57 0 0"/>
+    </collision>
+    <visual>
+      <geometry><mesh filename="package://hr300_description/meshes/stl/arm2.STL" scale="0.001 0.001 0.001"/></geometry>
+      <origin xyz="0.123 0.014 -0.509554" rpy="0 0 3.14"/>
+      <material name="red"/>
+    </visual>
+  </link>
+
+  <link name="link3">
+    <collision>
+      <geometry><cylinder length="${height_2}" radius="${link_radius}"/></geometry>
+      <origin xyz="0 0 -${height_2/2}" rpy="3.14 0 0"/>
+    </collision>
+    <visual>
+      <geometry><mesh filename="package://hr300_description/meshes/stl/link3.STL" scale="0.001 0.001 0.001"/></geometry>
+      <origin xyz="0.11 -0.165 -0.5195" rpy="0 0 3.14"/>
+      <material name="whites"/>
+    </visual>
+  </link>
+
+  <!-- Соединения основной цепи -->
+  <joint name="joint1" type="revolute">
+    <parent link="link4"/>
+    <child link="link1"/>
+    <origin xyz="0 0 0" rpy="1.57 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="1"/>
+  </joint>
+
+  <joint name="joint2" type="revolute">
+    <parent link="link1"/>
+    <child link="link2"/>
+    <origin xyz="0 0 ${height}" rpy="-1.57 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="1"/>
+    <mimic joint="joint1" multiplier="-1" offset="0"/>
+  </joint>
+
+  <joint name="joint3" type="revolute">
+    <parent link="link2"/>
+    <child link="link3"/>
+    <origin xyz="0 ${width} 0" rpy="1.57 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="1"/>
+    <mimic joint="joint1" multiplier="1" offset="0"/>
+
+  </joint>
+
+
+
+  <link name="link4">
+    <collision>
+      <geometry><cylinder length="${width}" radius="${link_radius}"/></geometry>
+      <origin xyz="0 ${width/2} 0" rpy="1.57 0 0"/>
+    </collision>
+    <visual>
+      <geometry><mesh filename="package://hr300_description/meshes/stl/link2.STL" scale="0.001 0.001 0.001"/></geometry>
+      <origin xyz="0.11 -0.015 -0.48" rpy="0 0 3.14"/>
+      <material name="blue"/>
+    </visual>
+  </link>
+
+  <joint name="joint4" type="revolute">
+    <parent link="rev_base_link"/>
+    <child link="link4"/>
+    <origin xyz="0.004 0 0.06911" rpy="0 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="1"/>
+  </joint>
+
+
+
+  <link name="link_top_1">
+    <collision>
+      <geometry><cylinder length="${width}" radius="${link_radius}"/></geometry>
+      <origin xyz="0 ${width/2} 0" rpy="1.57 0 0"/>
+    </collision>
+    <visual>
+      <geometry><mesh filename="package://hr300_description/meshes/stl/arm2.STL" scale="0.001 0.001 0.001"/></geometry>
+      <origin xyz="0.114 0.0127 -0.508" rpy="0 0 3.14"/>
+      <material name="blue"/>
+    </visual>
+  </link>
+
+  <joint name="joint_top_1" type="revolute">
+    <parent link="rev_base_link"/>
+    <child link="link_top_1"/>
+    <origin xyz="-0.00015 -0.02829 0.09739" rpy="0 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="1"/>
+    <mimic joint="joint4" multiplier="1" offset="0"/>
+  </joint>
+
+
+  <link name="triangle_left_link">
+    <collision>
+      <geometry><cylinder length="${triangle}" radius="${link_radius}"/></geometry>
+      <origin xyz="0 0.0141421 -0.0141421" rpy="0.785 0 0"/>
+    </collision>
+    <visual>
+      <geometry><mesh filename="package://hr300_description/meshes/stl/lokot.STL" scale="0.001 0.001 0.001"/></geometry>
+      <origin xyz="-0.11 0.189 -0.508" rpy="0 0 0"/>
+      <material name="green"/>
+    </visual>
+  </link>
+
+  <joint name="triangle_left_joint" type="revolute">
+    <parent link="link_top_1"/>
+    <child link="triangle_left_link"/>
+    <origin xyz="0 ${width} 0" rpy="0 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="1"/>
+    <mimic joint="joint4" multiplier="-1" offset="0"/>
+  </joint>
+
+  <link name="triangle_right_link">
+    <collision>
+      <geometry><cylinder length="${triangle}" radius="${link_radius}"/></geometry>
+      <origin xyz="0 -0.0141421 -0.0141421" rpy="-0.785 0 0"/>
+    </collision>
+    <visual>
+      <geometry><cylinder length="${triangle}" radius="${link_radius}"/></geometry>
+      <origin xyz="0 -0.0141421 -0.0141421" rpy="-0.785 0 0"/>
+      <material name="red"/>
+    </visual>
+  </link>
+
+  <joint name="triangle_right_joint" type="fixed">
+    <parent link="triangle_left_link"/>
+    <child link="triangle_right_link"/>
+    <origin xyz="0 0.05657 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="triangle_top_link">
+    <collision>
+      <geometry><cylinder length="0.05657" radius="${link_radius}"/></geometry>
+      <origin xyz="0 0.028285 0" rpy="1.57 0 0"/>
+    </collision>
+    <visual>
+      <geometry><cylinder length="0.05657" radius="${link_radius}"/></geometry>
+      <origin xyz="0 0.028285 0" rpy="1.57 0 0"/>
+      <material name="red"/>
+    </visual>
+  </link>
+
+  <joint name="triangle_top_joint" type="fixed">
+    <parent link="triangle_left_link"/>
+    <child link="triangle_top_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+
+  <link name="mimic_link_1">
+    <collision>
+      <geometry><box size="0.001 0.001 0.001"/></geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </collision>
+    <visual>
+      <geometry><box size="0.001 0.001 0.001"/></geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <material name="green"/>
+    </visual>
+  </link>
+   
+  <joint name="mimic_joint" type="revolute">
+    <parent link="triangle_right_link"/>
+    <child link="mimic_link_1"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="1"/>
+    <mimic joint="joint1" multiplier="1" offset="0"/>
+  </joint>
+
+  <link name="link_top_2">
+    <collision>
+      <geometry><cylinder length="${width}" radius="${link_radius}"/></geometry>
+      <origin xyz="0 0 -${width/2}" rpy="0 0 0"/>
+    </collision>
+    <visual>
+      <geometry><mesh filename="package://hr300_description/meshes/stl/arm2.STL" scale="0.001 0.001 0.001"/></geometry>
+      <origin xyz="-0.12 -0.51 -0.135" rpy="-1.57 0 0"/>
+      <material name="red"/>
+    </visual>
+  </link>
+   
+  <joint name="joint_top_2" type="revolute">
+    <parent link="mimic_link_1"/>
+    <child link="link_top_2"/>
+    <origin xyz="0 0 0" rpy="1.57 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="1"/>
+    <mimic joint="joint4" multiplier="1" offset="0"/>
+  </joint>
+  
+  <link name="mimic_link_2">
+    <collision>
+      <geometry><box size="0.001 0.001 0.001"/></geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </collision>
+    <visual>
+      <geometry><box size="0.001 0.001 0.001"/></geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <material name="green"/>
+    </visual>
+  </link>
+   
+  <joint name="mimic_joint_2" type="revolute">
+    <parent link="link_top_2"/>
+    <child link="mimic_link_2"/>
+    <origin xyz="0 0 -${width}" rpy="-1.57 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="1"/>
+    <mimic joint="joint1" multiplier="-1" offset="0"/>
+  </joint>
+  
+  
+  <link name="triangle2_right_link">
+    <collision>
+      <geometry><cylinder length="${triangle2}" radius="${link_radius}"/></geometry>
+      <origin xyz="0 0 -${triangle2/2}" rpy="0 0 0"/>
+    </collision>
+    <visual>
+      <geometry><mesh filename="package://hr300_description/meshes/stl/link4.STL" scale="0.001 0.001 0.001"/></geometry>
+      <origin xyz="0.112 ${-0.045-width} ${-0.208-width}" rpy="0 0 3.14"/>
+      <material name="green"/>
+    </visual>
+  </link>
+
+  <joint name="triangle2_right_joint" type="revolute">
+    <parent link="mimic_link_2"/>
+    <child link="triangle2_right_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="1"/>
+    <mimic joint="joint4" multiplier="-1" offset="0"/>
+  </joint>
+
+
+  <link name="mimic_link_3">
+    <collision>
+      <geometry><box size="0.001 0.001 0.001"/></geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </collision>
+    <visual>
+      <geometry><box size="0.001 0.001 0.001"/></geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <material name="green"/>
+    </visual>
+  </link>
+   
+  <joint name="mimic_joint_3" type="revolute">
+    <parent link="link3"/>
+    <child link="mimic_link_3"/>
+    <origin xyz="0 0 -${height_2}" rpy="0 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="1"/>
+    <mimic joint="joint1" multiplier="-1" offset="0"/>
+  </joint>
+  
+  
+  <link name="triangle2_bottom_link">
+    <collision>
+      <geometry><cylinder length="${triangle2}" radius="${link_radius}"/></geometry>
+      <origin xyz="0 ${triangle2/2} 0" rpy="1.57 0 0"/>
+    </collision>
+    <visual>
+      <geometry><cylinder length="${triangle2}" radius="${link_radius}"/></geometry>
+      <origin xyz="0 ${triangle2/2} 0" rpy="1.57 0 0"/>
+      <material name="red"/>
+    </visual>
+  </link>
+
+  <joint name="triangle2_bottom_joint" type="revolute">
+    <parent link="mimic_link_3"/>
+    <child link="triangle2_bottom_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="1"/>
+    <mimic joint="joint4" multiplier="-1" offset="0"/>
+  </joint>
+  
+   <link name="triangle2_gip_link">
+    <collision>
+      <geometry><cylinder length="0.04" radius="${link_radius}"/></geometry>
+      <origin xyz="0 -0.0141421 -0.0141421" rpy="-0.785 0 0"/>
+    </collision>
+    <visual>
+      <geometry><cylinder length="0.04" radius="${link_radius}"/></geometry>
+      <origin xyz="0 -0.0141421 -0.0141421" rpy="-0.785 0 0"/>
+      <material name="red"/>
+    </visual>
+  </link>
+
+  <joint name="triangle2_gip_joint" type="fixed">
+    <parent link="triangle2_right_link"/>
+    <child link="triangle2_gip_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="link_end">
+    <collision>
+      <geometry><cylinder length="${triangle2}" radius="${link_radius}"/></geometry>
+      <origin xyz="0 ${triangle2/2} 0" rpy="1.57 0 0"/>
+    </collision>
+    <visual>
+      <geometry><cylinder length="${triangle2}" radius="${link_radius}"/></geometry>
+      <origin xyz="0 ${triangle2/2} 0" rpy="1.57 0 0"/>
+      <material name="red"/>
+    </visual>
+  </link>
+
+  <joint name="joint_end" type="fixed">
+    <parent link="triangle2_bottom_link"/>
+    <child link="link_end"/>
+    <origin xyz="0 ${triangle2} 0" rpy="0 0 0"/>
+  </joint>
+  
+</robot>

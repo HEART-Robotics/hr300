@@ -1,0 +1,10 @@
+float32[6] target
+float32 speed
+float32 acceleration
+---
+bool success
+string message
+---
+float32[6] current
+float32 progress
+string state
