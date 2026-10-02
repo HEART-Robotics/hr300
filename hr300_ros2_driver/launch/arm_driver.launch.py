@@ -9,6 +9,7 @@ def generate_launch_description():
         DeclareLaunchArgument("port", default_value="/dev/ttyACM0"),
         DeclareLaunchArgument("baudrate", default_value="115200"),
         DeclareLaunchArgument("update_rate", default_value="20.0"),
+        DeclareLaunchArgument("pid_joint", default_value="0"),
 
         Node(
             package="hr300_ros2_driver",
@@ -20,6 +21,7 @@ def generate_launch_description():
                     "port": LaunchConfiguration("port"),
                     "baudrate": LaunchConfiguration("baudrate"),
                     "update_rate": LaunchConfiguration("update_rate"),
+                    "pid_joint": LaunchConfiguration("pid_joint"),
                     "joint_names": ["joint1", "joint2", "joint3", "joint4"],
                 }
             ],

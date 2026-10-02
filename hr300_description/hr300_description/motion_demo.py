@@ -6,8 +6,8 @@ class JointController(Node):
     def __init__(self):
         super().__init__('joint_controller_demo')
         # Parameters can be lists (passed from launch file)
-        self.declare_parameter('joint_names', ['joint1', 'joint2', 'joint3'])
-        self.declare_parameter('positions', [0.5, 0.0, -0.5])
+        self.declare_parameter('joint_names', ['joint1', 'joint2', 'joint3', 'joint4'])
+        self.declare_parameter('positions', [0.5, 0.0, -0.5, 0.0])
 
         joint_names = self.get_parameter('joint_names').value
         positions = self.get_parameter('positions').value

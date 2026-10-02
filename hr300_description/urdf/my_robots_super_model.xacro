@@ -407,5 +407,16 @@
     <limit lower="-3.14" upper="3.14" effort="10" velocity="1"/>
   </joint>
 
+  <!-- Firmware joint 4: wrist-servo orientation at the tool flange. -->
+  <link name="flange_dummy_link"/>
+
+  <joint name="joint4" type="revolute">
+    <parent link="link_end"/>
+    <child link="flange_dummy_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="0.0" upper="3.14159265359" effort="10" velocity="2"/>
+  </joint>
+
   
 </robot>

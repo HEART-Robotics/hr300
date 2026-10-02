@@ -3,6 +3,7 @@
 import time
 import threading
 import struct
+import math
 import serial
 
 import rclpy
@@ -13,12 +14,30 @@ from std_srvs.srv import Trigger, SetBool
 
 
 from hr300_interfaces.srv import SetValues
-from hr300_interfaces.action import MoveJoints
 
 
 FRAME_STX = 0x02
 FRAME_ETX = 0x03
 FRAME_MAX_PAYLOAD = 256
+JOINT_COUNT = 4
+
+# Current firmware reports a rejected command with the requested HR command
+# prefix and a textual reason (for example, ``HRSC:estop``).  Those replies
+# are transport-valid, but must be reported to ROS callers as failures.
+FIRMWARE_ERROR_PREFIXES = (
+    "bad_",
+    "estop",
+    "out_of_limits",
+    "failed",
+    "not_allowed",
+    "linear_not_calibrated",
+    "unknown",
+    "error",
+)
+
+
+def is_firmware_error_payload(payload: str) -> bool:
+    return payload.strip().lower().startswith(FIRMWARE_ERROR_PREFIXES)
 
 
 def crc8_maxim(data: bytes) -> int:
@@ -92,7 +111,6 @@ class ArmDriver:
         "movep": "HRSC",
         "movel": "HRSE",
         "set_jump_XYZ": "HRSJ",
-        "servoj": "HRSA",
         "get_fkin": "HRGO",
         "get_inversekin": "HRGI",
         "get_error": "HRGE",
@@ -103,7 +121,7 @@ class ArmDriver:
         "get_pid_gains": "HRGP",
         "set_pid_gains": "HRSP",
         "go_zero_config": "HRGH",
-        "position_control_off": "HRSV",
+        "set_target_velocities": "HRSV",
         "pnevmo_on": "HRPI",
         "pnevmo_off": "HRPO",
         "conveyer_on": "HRCO",
@@ -111,7 +129,7 @@ class ArmDriver:
         "laser_on": "HRLO",
         "laser_off": "HRLF",
         "get_laser_state": "HRLG",
-        "base_linear_position": "HRLS",
+        "move_base_linear_axis": "HRLS",
         "base_linear_calibrate": "HRLC",
         "get_limits": "HRGL",
         "set_limits": "HRSL",
@@ -177,6 +195,8 @@ class ArmDriver:
             try:
                 if method == "get":
                     payload = command.encode("ascii")
+                    if data not in (None, [], ()):
+                        payload += self._pack_int32_payload(data, width=6)
 
                 elif method == "tool":
                     if data is None:
@@ -209,6 +229,9 @@ class ArmDriver:
 
                 if resp_code.strip() != command:
                     return False, f"Code mismatch: expected {command}, got {resp_code}"
+
+                if is_firmware_error_payload(resp_payload):
+                    return False, text
 
                 values = [x.strip() for x in resp_payload.split(",")]
                 return True, values
@@ -246,8 +269,31 @@ class ArmDriver:
         return self.request("tool", "laser_off")
 
     def set_joints_deg(self, joints_deg):
-        data = [int(round(float(v) * 1000.0)) for v in joints_deg]
+        if len(joints_deg) < JOINT_COUNT:
+            return False, f"Expected at least {JOINT_COUNT} joint angles, got {len(joints_deg)}"
+        # SetValues has a fixed six-value field; HR-300 uses only the first
+        # four joint entries and ignores the two compatibility slots.
+        data = [int(round(math.radians(float(v)) * 1000.0)) for v in joints_deg[:JOINT_COUNT]]
         return self.request("set", "movep", data)
+
+    def set_target_velocities(self, velocities_rad_s):
+        if len(velocities_rad_s) < JOINT_COUNT:
+            return False, (
+                f"Expected at least {JOINT_COUNT} target velocities, "
+                f"got {len(velocities_rad_s)}"
+            )
+        data = [
+            int(round(float(value) * 1000.0))
+            for value in velocities_rad_s[:JOINT_COUNT]
+        ]
+        return self.request("set", "set_target_velocities", data)
+
+    def move_base_linear_axis(self, position_mm, speed_mm_s=0.0):
+        data = [
+            int(round(float(position_mm) * 1000.0)),
+            int(round(float(speed_mm_s) * 1000.0)),
+        ]
+        return self.request("set", "move_base_linear_axis", data)
 
     def set_tcp_shift(self, values_mm_or_deg):
         data = [int(round(float(v) * 1000.0)) for v in values_mm_or_deg]
@@ -260,9 +306,12 @@ class ArmDriver:
 
         try:
             values = [int(x) for x in payload]
+            if len(values) < JOINT_COUNT + 2:
+                return None
             status_code = values[0]
-            joints_deg = [v / 1000.0 for v in values[1:]]
-            return status_code, joints_deg
+            joints_rad = [v / 1000.0 for v in values[1:-1]]
+            control_loop_frequency_hz = values[-1]
+            return status_code, joints_rad, control_loop_frequency_hz
         except Exception:
             return None
 
@@ -276,19 +325,19 @@ class ArmDriver:
         ok, payload = self.request("get", "get_config_abs")
         if not ok:
             return None
-        return [int(x) / 1000.0 for x in payload]
+        return [int(x) / 1000.0 for x in payload[:JOINT_COUNT]]
 
     def get_relative_config(self):
         ok, payload = self.request("get", "actual_q")
         if not ok:
             return None
-        return [int(x) / 1000.0 for x in payload]
+        return [int(x) / 1000.0 for x in payload[:JOINT_COUNT]]
 
     def get_target_config(self):
         ok, payload = self.request("get", "get_target_config")
         if not ok:
             return None
-        return [int(x) / 1000.0 for x in payload]
+        return [int(x) / 1000.0 for x in payload[:JOINT_COUNT]]
 
     def get_fkin(self):
         ok, payload = self.request("get", "get_fkin")
@@ -296,14 +345,31 @@ class ArmDriver:
             return None
         return [int(x) / 1000.0 for x in payload]
 
-    def get_pid_gains(self):
-        ok, payload = self.request("get", "get_pid_gains")
+    def get_pid_gains(self, joint_index=0):
+        ok, payload = self.request("get", "get_pid_gains", [int(joint_index)])
         if not ok:
             return None
-        return [int(x) for x in payload]
+        values = [int(x) for x in payload]
+        if len(values) < 4:
+            return None
+        return {
+            "joint": values[0],
+            "kp": values[1] / 1000.0,
+            "ki": values[2] / 1000.0,
+            "kd": values[3] / 1000.0,
+        }
 
     def set_pid_gains(self, values):
-        return self.request("set", "set_pid_gains", [int(v) for v in values])
+        if len(values) < 4:
+            return False, "Expected [joint_index, kp, ki, kd]"
+        joint_index, kp, ki, kd = values[:4]
+        data = [
+            int(joint_index),
+            int(round(float(kp) * 1000.0)),
+            int(round(float(ki) * 1000.0)),
+            int(round(float(kd) * 1000.0)),
+        ]
+        return self.request("set", "set_pid_gains", data)
 
     def get_limits(self):
         ok, payload = self.request("get", "get_limits")
@@ -311,16 +377,18 @@ class ArmDriver:
             return None
         vals = [int(x) for x in payload]
         return {
-            "max_speed": vals[0] / 1000.0,
-            "max_accel": vals[1] / 1000.0,
-            "tolerance": vals[2],
+            "max_velocity_rad_s": vals[0] / 1000.0,
+            "max_acceleration_rad_s2": vals[1] / 1000.0,
+            "tolerance_rad": vals[2] / 1000.0,
+            "max_current_a": vals[3] / 1000.0 if len(vals) > 3 else 0.0,
         }
 
-    def set_limits(self, max_speed, max_accel, tolerance):
+    def set_limits(self, max_velocity, max_acceleration, tolerance, max_current=0.0):
         data = [
-            int(round(float(max_speed) * 1000.0)),
-            int(round(float(max_accel) * 1000.0)),
-            int(tolerance),
+            int(round(float(max_velocity) * 1000.0)),
+            int(round(float(max_acceleration) * 1000.0)),
+            int(round(float(tolerance) * 1000.0)),
+            int(round(float(max_current) * 1000.0)),
         ]
         return self.request("set", "set_limits", data)
 
@@ -347,11 +415,18 @@ class ArmROS2Driver(Node):
         self.declare_parameter("baudrate", 115200)
         self.declare_parameter("update_rate", 20.0)
         self.declare_parameter("joint_names", ["joint1", "joint2", "joint3", "joint4"])
+        self.declare_parameter("pid_joint", 0)
 
         port = self.get_parameter("port").value
         baudrate = int(self.get_parameter("baudrate").value)
         update_rate = float(self.get_parameter("update_rate").value)
         self.joint_names = list(self.get_parameter("joint_names").value)
+        self.pid_joint = int(self.get_parameter("pid_joint").value)
+
+        if len(self.joint_names) != JOINT_COUNT:
+            raise ValueError(
+                f"joint_names must contain exactly {JOINT_COUNT} names to match the firmware"
+            )
 
         self.driver = ArmDriver(port, baudrate)
         self.publisher = self.create_publisher(JointState, "/joint_states", 10)
@@ -366,6 +441,12 @@ class ArmROS2Driver(Node):
         self.create_service(Trigger, "/arm/laser_off", self.handle_laser_off)
 
         self.create_service(SetValues, "/arm/set_joints", self.handle_set_joints)
+        self.create_service(
+            SetValues, "/arm/set_target_velocities", self.handle_set_target_velocities
+        )
+        self.create_service(
+            SetValues, "/arm/move_base_linear_axis", self.handle_move_base_linear_axis
+        )
         self.create_service(SetValues, "/arm/set_pid_gains", self.handle_set_pid_gains)
         self.create_service(SetValues, "/arm/set_tcp_shift", self.handle_set_tcp_shift)
         self.create_service(SetValues, "/arm/set_limits", self.handle_set_limits)
@@ -414,22 +495,28 @@ class ArmROS2Driver(Node):
         return self._set_trigger_response(response, self.driver.laser_off())
 
     def handle_set_joints(self, request, response):
-        ok, payload = self.driver.set_joints_deg(request.values)
-        response.success = bool(ok)
-        response.message = ",".join(str(x) for x in payload) if isinstance(payload, list) else str(payload)
-        return response
+        return self._set_trigger_response(response, self.driver.set_joints_deg(request.values))
+
+    def handle_set_target_velocities(self, request, response):
+        return self._set_trigger_response(
+            response, self.driver.set_target_velocities(request.values)
+        )
+
+    def handle_move_base_linear_axis(self, request, response):
+        speed_mm_s = request.values[1] if len(request.values) > 1 else 0.0
+        return self._set_trigger_response(
+            response, self.driver.move_base_linear_axis(request.values[0], speed_mm_s)
+        )
 
     def handle_set_tcp_shift(self, request, response):
-        ok, payload = self.driver.set_tcp_shift(request.values)
-        response.success = bool(ok)
-        response.message = ",".join(str(x) for x in payload) if isinstance(payload, list) else str(payload)
-        return response
+        if len(request.values) < 3:
+            response.success = False
+            response.message = "Expected values: [x_mm, y_mm, z_mm]"
+            return response
+        return self._set_trigger_response(response, self.driver.set_tcp_shift(request.values[:3]))
 
     def handle_set_pid_gains(self, request, response):
-        ok, payload = self.driver.set_pid_gains(request.values)
-        response.success = bool(ok)
-        response.message = ",".join(str(x) for x in payload) if isinstance(payload, list) else str(payload)
-        return response
+        return self._set_trigger_response(response, self.driver.set_pid_gains(request.values))
 
     def handle_set_limits(self, request, response):
         if len(request.values) < 3:
@@ -437,7 +524,10 @@ class ArmROS2Driver(Node):
             response.message = "Expected values: [max_speed, max_accel, tolerance]"
             return response
 
-        ok, payload = self.driver.set_limits(request.values[0], request.values[1], request.values[2])
+        max_current = request.values[3] if len(request.values) > 3 else 0.0
+        ok, payload = self.driver.set_limits(
+            request.values[0], request.values[1], request.values[2], max_current
+        )
         response.success = bool(ok)
         response.message = ",".join(str(x) for x in payload) if isinstance(payload, list) else str(payload)
         return response
@@ -459,9 +549,12 @@ class ArmROS2Driver(Node):
             response.success = False
             response.message = "Failed to get status"
         else:
-            code, joints = status
+            code, joints_rad, frequency_hz = status
             response.success = True
-            response.message = f"status={code},joints=" + ",".join(f"{v:.3f}" for v in joints)
+            response.message = (
+                f"status={code},frequency_hz={frequency_hz},joints_rad="
+                + ",".join(f"{v:.3f}" for v in joints_rad)
+            )
         return response
 
     def handle_get_absolute_angles(self, request, response):
@@ -489,9 +582,9 @@ class ArmROS2Driver(Node):
         return response
 
     def handle_get_pid_gains(self, request, response):
-        vals = self.driver.get_pid_gains()
+        vals = self.driver.get_pid_gains(self.pid_joint)
         response.success = vals is not None
-        response.message = ",".join(str(v) for v in vals) if vals is not None else "Failed"
+        response.message = str(vals) if vals is not None else "Failed"
         return response
 
     def handle_get_limits(self, request, response):
@@ -507,8 +600,8 @@ class ArmROS2Driver(Node):
         return response
 
     def publish_joint_state(self):
-        angles_deg = self.driver.get_joint_positions_from_status()
-        if angles_deg is None:
+        joints_rad = self.driver.get_joint_positions_from_status()
+        if joints_rad is None:
             return
 
         msg = JointState()
@@ -516,12 +609,12 @@ class ArmROS2Driver(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.name = self.joint_names
 
-        angles_deg = angles_deg[:len(self.joint_names)]
-        if len(angles_deg) < len(self.joint_names):
-            angles_deg += [0.0] * (len(self.joint_names) - len(angles_deg))
+        joints_rad = joints_rad[:JOINT_COUNT]
+        if len(joints_rad) != JOINT_COUNT:
+            return
 
         # ROS JointState должен быть в радианах
-        msg.position = [float(v) * 3.141592653589793 / 180.0 for v in angles_deg]
+        msg.position = joints_rad
         self.publisher.publish(msg)
 
     def destroy_node(self):
